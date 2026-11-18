@@ -126,22 +126,62 @@ app.post('/api/employees', async (req, res) => {
     }
     catch(err){
         console.error('❌Error creating employee', err.stack);
-        if (error.code === '23505') return res.status(409).json({ error: 'Email already exists' });
-        if (error.code === '23514') return res.status(400).json({ error: 'Salary must be > 0' });
-        if (error.code === '22P02') return res.status(400).json({ error: 'Invalid input type' });
+        if (err.code === '23505') return res.status(409).json({ error: 'Email already exists' });
+        if (err.code === '23514') return res.status(400).json({ error: 'Salary must be > 0' });
+        if (err.code === '22P02') return res.status(400).json({ error: 'Invalid input type' });
         res.status(500).json({ error: 'Internal Server Error',message: err.message });
     }
 });
 
 // Update employee
 app.put('/api/employees/:id', async (req, res) => {
-    const { fname, lname, dept, salary, hire_date } = req.body;
+    const { fname, lname, dept, salary,hire_date } = req.body;
     try{
         const present = await pool.query('SELECT * FROM employees WHERE emp_id=$1',[req.params.id]);
         if(present.rowCount === 0){
             return res.status(404).json({ error: `Employee with id ${req.params.id} not found` });
         }
-        
+        const updates=[];
+        const values=[];
+        let paramCount=1;
+        if(fname){
+            updates.push(`fname=$${paramCount++}`);
+            values.push(fname);
+        }
+        if(lname){
+            updates.push(`lname=$${paramCount++}`);
+            values.push(lname);
+        }
+        if(dept){
+            updates.push(`dept=$${paramCount++}`);
+            values.push(dept);
+
+        }
+        if(salary){
+            if(isNaN(salary) || salary <= 0){
+                return res.status(400).json({ error: 'Salary must be a positive number' });
+            }
+            updates.push(`salary=$${paramCount++}`);
+            values.push(salary);
+        }
+        if(hire_date){
+            return res.status(400).json({ error: 'Hire date cannot be updated' });
+        }
+        updates.push(`updated_at=CURRENT_TIMESTAMP`);
+        if(updates.length === 1){
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+        values.push(req.params.id);
+        const result = await pool.query(
+           `UPDATE employees
+           SET ${updates.join(', ')}
+           WHERE emp_id=$${paramCount}
+           RETURNING *`,values
+        );
+        res.json({
+        status: 'success',
+        data: result.rows[0]
+        });
     }
     catch(err){
         console.error('❌Error updating employee', err.stack);
