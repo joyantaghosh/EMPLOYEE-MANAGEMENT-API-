@@ -9,6 +9,11 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use((req, _res, next) => {
+  console.log(`➡️  ${req.method} ${req.originalUrl} | params:`, req.params, '| body:', req.body);
+  next();
+});
+
 
 const pool = new Pool({
     user:process.env.DB_USER,
@@ -80,34 +85,87 @@ app.get('/api/employees/dept/:dept', async (req, res) => {
 
 // Create new employee
 app.post('/api/employees', async (req, res) => {
-    try{
+        let { fname, lname, email, dept, salary, hire_date } = req.body;
 
+    try{
+        if(!lname || !fname || !email || !salary){
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+        if(isNaN(salary) || salary <= 0){
+            return res.status(400).json({ error: 'Salary must be a positive number' });
+        }
+        if(!dept){
+            dept = 'General';
+        }
+        if(!hire_date){
+            hire_date = new Date().toISOString().split('T')[0];
+        }
+        fname = fname.trim();
+        lname = lname.trim();
+        email = email.trim().toLowerCase();
+        dept  = dept?.trim() || 'General';        // null → COALESCE → 'General'
+        hire_date = hire_date || new Date();       // null → COALESCE → CURRENT_DATE
+        // salary = salary ?? null;
+
+        const sql = `
+                 INSERT INTO employees (fname, lname, email, dept, salary, hire_date)
+                 VALUES ($1, $2, $3, COALESCE($4, 'General'), $5, COALESCE($6, CURRENT_DATE))
+                 RETURNING *`;
+    const values = [fname, lname, email, dept, salary, hire_date];
+
+    // const { rows } = await pool.query(sql, values);
+    // res.status(201).json({ message: 'Employee created', data: rows[0] });
+        const result = await pool.query(
+            'INSERT INTO employees (fname, lname, email, dept, salary, hire_date) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [fname, lname, email, dept, salary, hire_date]
+        );
+        res.status(201).json({
+            status: 'success',
+            data: result.rows[0]
+        });
     }
     catch(err){
         console.error('❌Error creating employee', err.stack);
-        res.status(500).json({ error: 'Internal Server Error' });
+        if (error.code === '23505') return res.status(409).json({ error: 'Email already exists' });
+        if (error.code === '23514') return res.status(400).json({ error: 'Salary must be > 0' });
+        if (error.code === '22P02') return res.status(400).json({ error: 'Invalid input type' });
+        res.status(500).json({ error: 'Internal Server Error',message: err.message });
     }
 });
 
 // Update employee
 app.put('/api/employees/:id', async (req, res) => {
+    const { fname, lname, dept, salary, hire_date } = req.body;
     try{
-
+        const present = await pool.query('SELECT * FROM employees WHERE emp_id=$1',[req.params.id]);
+        if(present.rowCount === 0){
+            return res.status(404).json({ error: `Employee with id ${req.params.id} not found` });
+        }
+        
     }
     catch(err){
         console.error('❌Error updating employee', err.stack);
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.status(500).json({ error: 'Internal Server Error',message: err.message });
     }
 });
 // Delete employee
 app.delete('/api/employees/:id', async (req, res) => {
     try{
-
+        const present = await pool.query('SELECT * FROM employees WHERE emp_id=$1',[req.params.id]);
+        if(present.rowCount === 0){
+            return res.status(404).json({ error: `Employee with id ${req.params.id} not found` });
+        }
+        const result = await pool.query('DELETE FROM employees WHERE emp_id=$1',[req.params.id]);
+        res.json({
+            status: 'success',
+            message: `Employee with id ${req.params.id} deleted`,
+            count: result.rowCount
+        })
 
     }
     catch(err){
         console.error('❌Error deleting employee', err.stack);
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.status(500).json({ error: 'Internal Server Error',message: err.message });
     }
 });
 
