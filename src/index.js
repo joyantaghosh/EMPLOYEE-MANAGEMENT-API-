@@ -51,6 +51,48 @@ app.get('/api/employees', async (req, res) => {
     }
 });
 
+// Search employees (query params: name, dept, min_salary, max_salary)
+app.get('/api/employees/search', async (req, res) => {
+    const { name, dept, min_salary, max_salary } = req.query
+    try{
+        let query ='SELECT * FROM employees WHERE 1=1';
+        const values=[];
+        let paramCount=1;
+
+        if(name){
+            query += ` AND (fname ILIKE $${paramCount} OR lname ILIKE $${paramCount})`;
+            values.push(`%${name}%`);
+            paramCount++;
+        }
+        if(dept){
+            query +=` AND dept = $${paramCount}`;
+            values.push(dept);
+            paramCount++;
+        }
+        if(min_salary){
+            query += ` AND salary >=$${paramCount}`;
+            values.push(min_salary);
+            paramCount++;
+        }
+        if(max_salary){
+            query += ` AND salary <=$${paramCount}`;
+            values.push(max_salary);
+            paramCount++;
+        }
+        query += ` ORDER BY emp_id ASC`;
+        const result = await pool.query(query,values);
+        res.json({
+            status: 'success',
+            data: result.rows,
+            count: result.rowCount
+        });
+    }
+    catch(err){
+        console.error('❌Error searching employees', err.stack);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // Get all employees by id
 app.get('/api/employees/:id', async (req, res) => {
     try{
@@ -216,16 +258,6 @@ app.get('/api/stats', async (req, res) => {
     }
     catch(err){
         console.error('❌Error fetching employee statistics', err.stack);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
-});
-// Search employees (query params: name, dept, min_salary, max_salary)
-app.get('/api/employees/search', async (req, res) => {
-    try{
-
-    }
-    catch(err){
-        console.error('❌Error searching employees', err.stack);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
